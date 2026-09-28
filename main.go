@@ -13,6 +13,13 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+func gameHandler(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		fmt.Print("websocket error : ", err)
+		return
+	}
+}
 func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "Game server is running!")
