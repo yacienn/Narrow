@@ -16,19 +16,37 @@ var upgrader = websocket.Upgrader{
 func gameHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		fmt.Print("websocket error : ", err)
+		fmt.Println("websocket upgrade error:", err)
 		return
 	}
-}
-func main() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "Game server is running!")
-	})
+	defer conn.Close()
+	fmt.Println("Player connected!")
 
+	for {
+		messageType, message, err := conn.ReadMessage()
+		if err != nil {
+			fmt.Println("read error:", err)
+			return
+		}
+
+		fmt.Println("received:", string(message))
+
+		err = conn.WriteMessage(messageType, message)
+		if err != nil {
+			fmt.Println("write error:", err)
+			return
+		}
+	}
+}
+
+func main() {
+	http.HandleFunc("/game", gameHandler)
 	fmt.Println("Server listening on :8080")
 
-	err := http.ListenAndServe(":8080", nil)
+	// Listen on all network interfaces, not just localhost,
+	// so other PCs on the LAN can reach it.
+	err := http.ListenAndServe("0.0.0.0:8080", nil)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("server error:", err)
 	}
 }
