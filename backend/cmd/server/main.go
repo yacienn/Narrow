@@ -18,6 +18,17 @@ var upgrader = websocket.Upgrader{
 type Client struct {
 	conn *websocket.Conn
 	id   int
+
+	// gorilla/websocket allows only one writer at a time per connection.
+	writeMu sync.Mutex
+}
+
+// send writes a text message safely (one writer at a time).
+func (c *Client) send(data []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	return c.conn.WriteMessage(websocket.TextMessage, data)
 }
 
 type Game struct {
@@ -31,8 +42,11 @@ var game = Game{
 	nextID:  1,
 }
 
-type Message struct {
-	Type string `json:"type"`
+// Anything the client sends us.
+type IncomingMessage struct {
+	Type string  `json:"type"`
+	X    float64 `json:"x"`
+	Y    float64 `json:"y"`
 }
 
 type WelcomeMessage struct {
@@ -48,6 +62,13 @@ type PlayerJoinedMessage struct {
 type PlayerLeftMessage struct {
 	Type     string `json:"type"`
 	PlayerID int    `json:"player_id"`
+}
+
+type PlayerMovedMessage struct {
+	Type     string  `json:"type"`
+	PlayerID int     `json:"player_id"`
+	X        float64 `json:"x"`
+	Y        float64 `json:"y"`
 }
 
 func gameHandler(w http.ResponseWriter, r *http.Request) {
@@ -72,7 +93,6 @@ func gameHandler(w http.ResponseWriter, r *http.Request) {
 	game.clients[playerID] = client
 
 	// Save a list of players that were already connected.
-	// We need this before unlocking.
 	existingPlayers := make([]int, 0, len(game.clients))
 
 	for id := range game.clients {
@@ -86,22 +106,17 @@ func gameHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Player connected:", playerID)
 
 	// Tell the new player its ID.
-	welcome := WelcomeMessage{
+	sendJSON(client, WelcomeMessage{
 		Type:     "welcome",
 		PlayerID: playerID,
-	}
-
-	sendJSON(conn, welcome)
+	})
 
 	// Tell the new player about existing players.
 	for _, existingID := range existingPlayers {
-
-		message := PlayerJoinedMessage{
+		sendJSON(client, PlayerJoinedMessage{
 			Type:     "player_joined",
 			PlayerID: existingID,
-		}
-
-		sendJSON(conn, message)
+		})
 	}
 
 	// Tell existing players that this player joined.
@@ -113,25 +128,39 @@ func gameHandler(w http.ResponseWriter, r *http.Request) {
 	// Listen for messages from this player.
 	for {
 
-		_, message, err := conn.ReadMessage()
+		_, raw, err := conn.ReadMessage()
 
 		if err != nil {
 			fmt.Println("Player disconnected:", playerID)
-
 			removeClient(playerID)
-
 			return
 		}
 
-		fmt.Printf(
-			"Player %d sent: %s\n",
-			playerID,
-			string(message),
-		)
+		var msg IncomingMessage
+
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			fmt.Println("invalid JSON from player", playerID, ":", err)
+			continue
+		}
+
+		switch msg.Type {
+
+		case "move":
+			// Relay this player's position to everyone else.
+			broadcastToOthers(playerID, PlayerMovedMessage{
+				Type:     "player_moved",
+				PlayerID: playerID,
+				X:        msg.X,
+				Y:        msg.Y,
+			})
+
+		default:
+			fmt.Printf("Player %d sent unknown type: %s\n", playerID, msg.Type)
+		}
 	}
 }
 
-func sendJSON(conn *websocket.Conn, message any) {
+func sendJSON(client *Client, message any) {
 
 	data, err := json.Marshal(message)
 
@@ -140,12 +169,7 @@ func sendJSON(conn *websocket.Conn, message any) {
 		return
 	}
 
-	err = conn.WriteMessage(
-		websocket.TextMessage,
-		data,
-	)
-
-	if err != nil {
+	if err := client.send(data); err != nil {
 		fmt.Println("send error:", err)
 	}
 }
@@ -159,27 +183,19 @@ func broadcastToOthers(senderID int, message any) {
 		return
 	}
 
+	// Copy the recipients so we don't hold the lock while writing.
 	game.mu.Lock()
-	defer game.mu.Unlock()
-
+	recipients := make([]*Client, 0, len(game.clients))
 	for id, client := range game.clients {
-
-		if id == senderID {
-			continue
+		if id != senderID {
+			recipients = append(recipients, client)
 		}
+	}
+	game.mu.Unlock()
 
-		err := client.conn.WriteMessage(
-			websocket.TextMessage,
-			data,
-		)
-
-		if err != nil {
-			fmt.Println(
-				"broadcast error to player",
-				id,
-				":",
-				err,
-			)
+	for _, client := range recipients {
+		if err := client.send(data); err != nil {
+			fmt.Println("broadcast error to player", client.id, ":", err)
 		}
 	}
 }

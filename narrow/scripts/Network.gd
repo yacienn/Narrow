@@ -15,6 +15,7 @@ var known_players: Array = []   # other players already in the game
 signal connected_to_server
 signal player_joined(player_id)
 signal player_left(player_id)
+signal player_moved(player_id, position)
 
 
 func _ready():
@@ -88,6 +89,9 @@ func handle_message(message: String):
 		"player_left":
 			handle_player_left(data)
 
+		"player_moved":
+			handle_player_moved(data)
+
 		_:
 			print("Unknown message type: ", type)
 
@@ -108,7 +112,10 @@ func handle_player_joined(data: Dictionary):
 
 	print("Player joined: ", joined_player_id)
 
-	if joined_player_id not in known_players:
+	if known_players == null:
+		known_players = []
+
+	if not known_players.has(joined_player_id):
 		known_players.append(joined_player_id)
 
 	# Tell Game.gd to spawn this player
@@ -125,6 +132,29 @@ func handle_player_left(data: Dictionary):
 
 	# Tell Game.gd to remove this player
 	player_left.emit(left_player_id)
+
+
+func handle_player_moved(data: Dictionary):
+
+	var moved_id = int(data.get("player_id", -1))
+	var pos = Vector2(
+		float(data.get("x", 0.0)),
+		float(data.get("y", 0.0))
+	)
+
+	player_moved.emit(moved_id, pos)
+
+
+func send_position(pos: Vector2):
+
+	if not connected:
+		return
+
+	socket.send_text(JSON.stringify({
+		"type": "move",
+		"x": pos.x,
+		"y": pos.y
+	}))
 
 
 func send_message(message: String):

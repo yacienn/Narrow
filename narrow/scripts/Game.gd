@@ -9,6 +9,7 @@ func _ready():
 	Network.connected_to_server.connect(_on_connected)
 	Network.player_joined.connect(_on_player_joined)
 	Network.player_left.connect(_on_player_left)
+	Network.player_moved.connect(_on_player_moved)
 
 	# In case messages arrived before this scene finished loading
 	if Network.player_id != -1:
@@ -36,6 +37,13 @@ func _on_player_left(player_id: int):
 		player.queue_free()
 
 
+func _on_player_moved(player_id: int, pos: Vector2):
+	var player = players.get_node_or_null("Player_" + str(player_id))
+
+	if player and not player.is_local:
+		player.target_position = pos
+
+
 func spawn_player(player_id: int, is_local: bool):
 	# Don't spawn the same player twice
 	if players.has_node("Player_" + str(player_id)):
@@ -49,5 +57,6 @@ func spawn_player(player_id: int, is_local: bool):
 	players.add_child(player)
 
 	player.position = Vector2(player_id * 40.0, 0)
+	player.target_position = player.position
 
 	print("Spawned Player ", player_id, " at ", player.position, " local=", is_local)
