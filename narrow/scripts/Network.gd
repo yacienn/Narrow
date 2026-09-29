@@ -8,11 +8,13 @@ const SERVER_URL = "ws://192.168.100.30:8080/game"
 
 var connected := false
 var player_id := -1
+var known_players: Array = []   # other players already in the game
 
 
 # Signals
 signal connected_to_server
 signal player_joined(player_id)
+signal player_left(player_id)
 
 
 func _ready():
@@ -83,13 +85,16 @@ func handle_message(message: String):
 		"player_joined":
 			handle_player_joined(data)
 
+		"player_left":
+			handle_player_left(data)
+
 		_:
 			print("Unknown message type: ", type)
 
 
 func handle_welcome(data: Dictionary):
 
-	player_id = data.get("player_id", -1)
+	player_id = int(data.get("player_id", -1))
 
 	print("My player ID: ", player_id)
 
@@ -99,12 +104,27 @@ func handle_welcome(data: Dictionary):
 
 func handle_player_joined(data: Dictionary):
 
-	var joined_player_id = data.get("player_id", -1)
+	var joined_player_id = int(data.get("player_id", -1))
 
 	print("Player joined: ", joined_player_id)
 
+	if joined_player_id not in known_players:
+		known_players.append(joined_player_id)
+
 	# Tell Game.gd to spawn this player
 	player_joined.emit(joined_player_id)
+
+
+func handle_player_left(data: Dictionary):
+
+	var left_player_id = int(data.get("player_id", -1))
+
+	print("Player left: ", left_player_id)
+
+	known_players.erase(left_player_id)
+
+	# Tell Game.gd to remove this player
+	player_left.emit(left_player_id)
 
 
 func send_message(message: String):

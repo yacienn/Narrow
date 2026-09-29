@@ -45,6 +45,11 @@ type PlayerJoinedMessage struct {
 	PlayerID int    `json:"player_id"`
 }
 
+type PlayerLeftMessage struct {
+	Type     string `json:"type"`
+	PlayerID int    `json:"player_id"`
+}
+
 func gameHandler(w http.ResponseWriter, r *http.Request) {
 
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -108,7 +113,7 @@ func gameHandler(w http.ResponseWriter, r *http.Request) {
 	// Listen for messages from this player.
 	for {
 
-		messageType, message, err := conn.ReadMessage()
+		_, message, err := conn.ReadMessage()
 
 		if err != nil {
 			fmt.Println("Player disconnected:", playerID)
@@ -123,17 +128,6 @@ func gameHandler(w http.ResponseWriter, r *http.Request) {
 			playerID,
 			string(message),
 		)
-
-		// Temporary echo.
-		err = conn.WriteMessage(messageType, message)
-
-		if err != nil {
-			fmt.Println("write error:", err)
-
-			removeClient(playerID)
-
-			return
-		}
 	}
 }
 
@@ -208,6 +202,12 @@ func removeClient(playerID int) {
 	client.conn.Close()
 
 	fmt.Println("Removed player:", playerID)
+
+	// Tell everyone else this player left.
+	broadcastToOthers(playerID, PlayerLeftMessage{
+		Type:     "player_left",
+		PlayerID: playerID,
+	})
 }
 
 func main() {

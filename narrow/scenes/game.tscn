@@ -1,5 +1,6 @@
 [gd_scene format=3 uid="uid://nits40rlc8oa"]
 
+[ext_resource type="Script" uid="uid://busoyluhkbkgh" path="res://scripts/Game.gd" id="1_game"]
 [ext_resource type="PackedScene" uid="uid://d2bar4ok2n6l4" path="res://scenes/player.tscn" id="1_uwrxv"]
 [ext_resource type="Texture2D" uid="uid://co1xxaj4nv1bc" path="res://assets/sprites/tileset.png" id="2_yqjtg"]
 
@@ -103,12 +104,13 @@ physics_layer_0/collision_layer = 1
 sources/0 = SubResource("TileSetAtlasSource_lnu2h")
 
 [node name="game" type="Node2D" unique_id=1280269541]
+script = ExtResource("1_game")
+player_scene = ExtResource("1_uwrxv")
 
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1966596105]
 position = Vector2(-3, -159)
 
-[node name="Player" parent="." unique_id=2112056114 instance=ExtResource("1_uwrxv")]
-position = Vector2(-3, 3)
+[node name="Players" type="Node2D" parent="."]
 
 [node name="TileMap" type="TileMap" parent="." unique_id=449446224]
 position = Vector2(0, 1)
