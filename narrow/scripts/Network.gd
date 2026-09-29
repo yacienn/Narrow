@@ -1,4 +1,4 @@
-
+#the communication layer between your Godot game and your Go
 extends Node
 
 var socket := WebSocketPeer.new()
