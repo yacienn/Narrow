@@ -15,13 +15,11 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// Client represents one connected player.
 type Client struct {
 	conn *websocket.Conn
 	id   int
 }
 
-// Game manages all connected players.
 type Game struct {
 	clients map[int]*Client
 	nextID  int
@@ -33,27 +31,29 @@ var game = Game{
 	nextID:  1,
 }
 
-// Messages sent between Godot and Go.
 type Message struct {
 	Type string `json:"type"`
 }
 
-// Message sent when a player connects.
 type WelcomeMessage struct {
+	Type     string `json:"type"`
+	PlayerID int    `json:"player_id"`
+}
+
+type PlayerJoinedMessage struct {
 	Type     string `json:"type"`
 	PlayerID int    `json:"player_id"`
 }
 
 func gameHandler(w http.ResponseWriter, r *http.Request) {
 
-	// Upgrade HTTP connection to WebSocket.
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		fmt.Println("websocket upgrade error:", err)
 		return
 	}
 
-	// Give the player a unique ID.
+	// Create a new player
 	game.mu.Lock()
 
 	playerID := game.nextID
@@ -66,35 +66,46 @@ func gameHandler(w http.ResponseWriter, r *http.Request) {
 
 	game.clients[playerID] = client
 
+	// Save a list of players that were already connected.
+	// We need this before unlocking.
+	existingPlayers := make([]int, 0, len(game.clients))
+
+	for id := range game.clients {
+		if id != playerID {
+			existingPlayers = append(existingPlayers, id)
+		}
+	}
+
 	game.mu.Unlock()
 
 	fmt.Println("Player connected:", playerID)
 
-	// Tell Godot its player ID.
+	// Tell the new player its ID.
 	welcome := WelcomeMessage{
 		Type:     "welcome",
 		PlayerID: playerID,
 	}
 
-	data, err := json.Marshal(welcome)
-	if err != nil {
-		fmt.Println("json error:", err)
-		conn.Close()
-		return
+	sendJSON(conn, welcome)
+
+	// Tell the new player about existing players.
+	for _, existingID := range existingPlayers {
+
+		message := PlayerJoinedMessage{
+			Type:     "player_joined",
+			PlayerID: existingID,
+		}
+
+		sendJSON(conn, message)
 	}
 
-	err = conn.WriteMessage(
-		websocket.TextMessage,
-		data,
-	)
+	// Tell existing players that this player joined.
+	broadcastToOthers(playerID, PlayerJoinedMessage{
+		Type:     "player_joined",
+		PlayerID: playerID,
+	})
 
-	if err != nil {
-		fmt.Println("welcome message error:", err)
-		removeClient(playerID)
-		return
-	}
-
-	// Keep listening for messages from this player.
+	// Listen for messages from this player.
 	for {
 
 		messageType, message, err := conn.ReadMessage()
@@ -114,10 +125,7 @@ func gameHandler(w http.ResponseWriter, r *http.Request) {
 		)
 
 		// Temporary echo.
-		err = conn.WriteMessage(
-			messageType,
-			message,
-		)
+		err = conn.WriteMessage(messageType, message)
 
 		if err != nil {
 			fmt.Println("write error:", err)
@@ -129,20 +137,75 @@ func gameHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func removeClient(playerID int) {
+func sendJSON(conn *websocket.Conn, message any) {
+
+	data, err := json.Marshal(message)
+
+	if err != nil {
+		fmt.Println("JSON error:", err)
+		return
+	}
+
+	err = conn.WriteMessage(
+		websocket.TextMessage,
+		data,
+	)
+
+	if err != nil {
+		fmt.Println("send error:", err)
+	}
+}
+
+func broadcastToOthers(senderID int, message any) {
+
+	data, err := json.Marshal(message)
+
+	if err != nil {
+		fmt.Println("JSON error:", err)
+		return
+	}
 
 	game.mu.Lock()
 	defer game.mu.Unlock()
 
+	for id, client := range game.clients {
+
+		if id == senderID {
+			continue
+		}
+
+		err := client.conn.WriteMessage(
+			websocket.TextMessage,
+			data,
+		)
+
+		if err != nil {
+			fmt.Println(
+				"broadcast error to player",
+				id,
+				":",
+				err,
+			)
+		}
+	}
+}
+
+func removeClient(playerID int) {
+
+	game.mu.Lock()
+
 	client, exists := game.clients[playerID]
 
 	if !exists {
+		game.mu.Unlock()
 		return
 	}
 
-	client.conn.Close()
-
 	delete(game.clients, playerID)
+
+	game.mu.Unlock()
+
+	client.conn.Close()
 
 	fmt.Println("Removed player:", playerID)
 }

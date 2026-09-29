@@ -3,59 +3,57 @@ extends Node
 
 var socket := WebSocketPeer.new()
 
-const SERVER_URL = "ws://192.168.100.30:8080"
-
+const SERVER_URL = "ws://192.168.100.30:8080/game"
 var connected := false
 
 
 func _ready():
-    connect_to_server()
+	connect_to_server()
 
 
 func connect_to_server():
-    var error = socket.connect_to_url(SERVER_URL)
+	var error = socket.connect_to_url(SERVER_URL)
 
-    if error != OK:
-        print("Failed to connect: ", error)
-        return
+	if error != OK:
+		print("Failed to connect: ", error)
+		return
 
-    print("Connecting to server...")
+	print("Connecting to server...")
 
 
 func _process(_delta):
-    socket.poll()
+	socket.poll()
 
-    var state = socket.get_ready_state()
+	var state = socket.get_ready_state()
 
-    if state == WebSocketPeer.STATE_OPEN:
+	if state == WebSocketPeer.STATE_OPEN:
 
-        if not connected:
-            connected = true
-            print("Connected to Go server!")
+		if not connected:
+			connected = true
+			print("Connected to Go server!")
 
-        receive_messages()
+		receive_messages()
 
-    elif state == WebSocketPeer.STATE_CLOSED:
+	elif state == WebSocketPeer.STATE_CLOSED:
 
-        if connected:
-            connected = false
-            print("Disconnected from Go server")
+		if connected:
+			connected = false
+			print("Disconnected from Go server")
 
 
 func receive_messages():
-    while socket.get_available_packet_count() > 0:
+	while socket.get_available_packet_count() > 0:
 
-        var packet = socket.get_packet()
+		var packet = socket.get_packet()
 
-        var message = packet.get_string_from_utf8()
+		var message = packet.get_string_from_utf8()
 
-        print("Server: ", message)
+		print("Server: ", message)
 
 
 func send_message(message: String):
-    if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
-        print("Cannot send message: not connected")
-        return
+	if socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		print("Cannot send message: not connected")
+		return
 
-    socket.send_text(message)
-
+	socket.send_text(message)
